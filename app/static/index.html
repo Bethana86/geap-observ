@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GEAP Agent Observability Platform</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300..700&family=Outfit:wght@100..900&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="/static/css/style.css?v=4.0.0" />
+    <style>
+        .tcs-title-header { justify-content: center; width: 100%; }
+        .section-title { align-items: center; }
+        .section-title h2 {
+            font-size: 2.2rem;
+            font-weight: 700;
+            text-align: center;
+            width: 100%;
+            letter-spacing: -0.01em;
+        }
+        .section-subtitle {
+            text-align: center;
+            color: var(--text-secondary);
+            font-size: 1rem;
+            margin-top: 0.4rem;
+            letter-spacing: 0.02em;
+        }
+        @media (max-width: 700px) { .section-title h2 { font-size: 2.5rem; } }
+        .metrics-tabs {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1rem;
+            width: 100%;
+            padding-bottom: 0.8rem;
+        }
+        .metrics-tabs .tab-btn {
+            width: 100%;
+            justify-content: center;
+            font-size: 1.15rem;
+            font-weight: 700;
+            padding: 1rem 1rem;
+            border-radius: 12px;
+            gap: 0.7rem;
+        }
+        .metrics-tabs .tab-btn i { font-size: 1.2rem; }
+        .metrics-tabs .tab-btn.active { box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25); }
+        .metrics-tabs .tab-btn .count { display: none; }
+        @media (max-width: 700px) {
+            .metrics-tabs { grid-template-columns: repeat(2, 1fr); }
+            .metrics-tabs .tab-btn { font-size: 1rem; padding: 0.85rem 0.8rem; }
+        }
+        .domain-group h4 {
+            font-size: 1.1rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            color: var(--text-primary);
+            border-left-width: 4px;
+            padding-left: 0.8rem;
+            margin-bottom: 0.9rem;
+            margin-top: 3rem;
+        }
+        /* 4-column agents row */
+        .agents-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.8rem; margin-top: 0.5rem; width: 100%; }
+        .branching-container { display: flex; justify-content: space-between; width: 90%; height: 25px; position: relative; }
+        @media (max-width: 900px) {
+            .agents-row { grid-template-columns: repeat(2, 1fr); }
+        }
+        .node-badge.identity { background: #06b6d4; }
+        .node-badge.software { background: #10b981; }
+        .node-badge.incident { background: #ef4444; }
+        .node-badge.access { background: #a855f7; }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <header class="app-header">
+            <div class="header-left">
+                <div class="header-logo-badge">
+                    <i class="fa-solid fa-brain" style="color:var(--google-blue); font-size:2rem;"></i>
+                </div>
+                <div class="header-titles">
+                    <h1>Enterprise IT Helpdesk</h1>
+                    <p>Powered by Gemini Enterprise Agent Platform</p>
+                </div>
+            </div>
+            <div class="header-right">
+                <div class="status-indicator" id="ws-indicator">
+                    <span class="pulse-dot" id="ws-dot"></span>
+                    <span class="status-text" id="ws-text">Connecting…</span>
+                </div>
+                <div class="status-indicator engine-indicator">
+                    <span class="pulse-dot blue" id="engine-dot"></span>
+                    <span class="status-text" id="engine-text">Engine: Loading…</span>
+                </div>
+                <button id="btn-theme-toggle" class="btn btn-secondary" title="Toggle theme">
+                    <i class="fa-solid fa-sun" id="theme-icon"></i> <span id="theme-text">Light</span>
+                </button>
+                <button id="btn-reset-all" class="btn btn-secondary">
+                    <i class="fa-solid fa-rotate-left"></i> Reset
+                </button>
+            </div>
+        </header>
+
+        <section class="pillar-strip" id="pillar-strip"></section>
+
+        <section class="exec-strip" id="exec-strip">
+            <div class="exec-card"><span class="exec-label">Success Rate (SLO)</span><strong class="exec-val" id="kpi-success">100.0%</strong><span class="exec-sub">Target ≥ 99.5%</span></div>
+            <div class="exec-card"><span class="exec-label">TTLT Latency (SLO)</span><strong class="exec-val" id="kpi-ttlt">0 ms</strong><span class="exec-sub">Target &lt; 5s</span></div>
+            <div class="exec-card"><span class="exec-label">Cost / Resolved Task</span><strong class="exec-val" id="kpi-cost">$0.00</strong><span class="exec-sub">Target &lt; $0.20</span></div>
+            <div class="exec-card"><span class="exec-label">Prefix Cache Hit</span><strong class="exec-val" id="kpi-cache">0%</strong><span class="exec-sub">Target ≥ 40%</span></div>
+            <div class="exec-card"><span class="exec-label">Autorater Quality</span><strong class="exec-val" id="kpi-quality">0.0</strong><span class="exec-sub">Target ≥ 4.0</span></div>
+            <div class="exec-card risk"><span class="exec-label">Agent Risk Score</span><strong class="exec-val" id="kpi-risk">0 <small id="kpi-risk-band">LOW</small></strong><span class="exec-sub">0–100 composite</span></div>
+        </section>
+
+        <div class="dashboard-grid">
+            <div class="grid-col">
+                <div class="card">
+                    <div class="card-header">
+                        <h2><i class="fa-solid fa-sliders"></i> Execution Controller</h2>
+                        <span class="card-subtitle">Preset scenario or live custom prompt</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="scenario-selector" id="scenario-selector">
+                            <div class="scenario-option active" data-scenario="password_reset">
+                                <div class="option-icon" style="color:#06b6d4;background:rgba(6,182,212,0.1)"><i class="fa-solid fa-key"></i></div>
+                                <div class="option-info"><h3>Password Reset</h3><p>Triage → Identity Agent → AD Reset + MFA Token</p></div>
+                            </div>
+                            <div class="scenario-option" data-scenario="software_install">
+                                <div class="option-icon support"><i class="fa-solid fa-download"></i></div>
+                                <div class="option-info"><h3>Software Install</h3><p>Triage → Software Agent → License Check + SCCM Deploy</p></div>
+                            </div>
+                            <div class="scenario-option" data-scenario="system_outage">
+                                <div class="option-icon" style="color:#ef4444;background:rgba(239,68,68,0.1)"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                                <div class="option-info"><h3>System Outage</h3><p>Triage → Incident Agent → Datadog + PagerDuty + Restart</p></div>
+                            </div>
+                            <div class="scenario-option" data-scenario="access_request">
+                                <div class="option-icon billing"><i class="fa-solid fa-lock-open"></i></div>
+                                <div class="option-info"><h3>Access Request</h3><p>Triage → Access Agent → ServiceNow + IAM Role</p></div>
+                            </div>
+                        </div>
+                        <button id="btn-run" class="btn btn-primary btn-block"><i class="fa-solid fa-bolt"></i> Execute Selected Flow</button>
+                        <div class="custom-query-divider"><span>OR RUN CUSTOM LIVE PROMPT</span></div>
+                        <div class="custom-query-input-group">
+                            <input type="text" id="custom-query" class="query-input" placeholder="e.g. I forgot my VPN password…" />
+                            <button id="btn-run-query" class="btn btn-secondary btn-send"><i class="fa-solid fa-paper-plane"></i> Run</button>
+                        </div>
+                        <div class="threat-row">
+                            <span class="threat-label"><i class="fa-solid fa-shield-halved"></i> Govern demo:</span>
+                            <button class="chip" data-threat="prompt_injection">Prompt Injection</button>
+                            <button class="chip" data-threat="jailbreak">Jailbreak</button>
+                            <button class="chip" data-threat="pii_leak">PII Leak</button>
+                            <button class="chip danger" data-threat="confused_deputy">Confused Deputy</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid-col">
+                <div class="card">
+                    <div class="card-header">
+                        <h2><i class="fa-solid fa-diagram-project"></i> Live Agent Flow &amp; Routing</h2>
+                        <span class="card-subtitle">Real-time handoffs, tools, model-tier routing</span>
+                        <span id="session-badge" class="session-badge">SESSION: NONE</span>
+                    </div>
+                    <div class="card-body flow-diagram-container">
+                        <div class="flow-chart">
+                            <div class="flow-node root-node" id="node-user"><i class="fa-solid fa-user"></i><span>Employee Query</span></div>
+                            <div class="flow-link" id="link-user-triage"></div>
+                            <div class="flow-node agent-node" id="node-triage_agent">
+                                <span class="node-badge">ROUTER (Flash)</span>
+                                <i class="fa-solid fa-filter"></i><strong>Triage Agent</strong>
+                                <span class="node-status">Idle</span>
+                            </div>
+                            <div class="branching-container">
+                                <div class="branch-line" id="link-triage-identity"></div>
+                                <div class="branch-line" id="link-triage-software"></div>
+                                <div class="branch-line" id="link-triage-incident"></div>
+                                <div class="branch-line" id="link-triage-access"></div>
+                            </div>
+                            <div class="agents-row">
+                                <div class="flow-node agent-node" id="node-identity_agent">
+                                    <span class="node-badge identity">IDENTITY (Flash)</span>
+                                    <i class="fa-solid fa-key"></i><strong>Identity</strong>
+                                    <span class="node-status">Idle</span>
+                                    <div class="tools-anchor-col">
+                                        <div class="tool-anchor" id="tool-reset_ad_password"><i class="fa-solid fa-unlock"></i> AD Reset</div>
+                                        <div class="tool-anchor" id="tool-send_mfa_token"><i class="fa-solid fa-shield"></i> MFA Token</div>
+                                    </div>
+                                </div>
+                                <div class="flow-node agent-node" id="node-software_agent">
+                                    <span class="node-badge software">SOFTWARE (Flash)</span>
+                                    <i class="fa-solid fa-download"></i><strong>Software</strong>
+                                    <span class="node-status">Idle</span>
+                                    <div class="tools-anchor-col">
+                                        <div class="tool-anchor" id="tool-check_license_pool"><i class="fa-solid fa-id-card"></i> License</div>
+                                        <div class="tool-anchor" id="tool-deploy_software"><i class="fa-solid fa-box"></i> SCCM</div>
+                                    </div>
+                                </div>
+                                <div class="flow-node agent-node" id="node-incident_agent">
+                                    <span class="node-badge incident">INCIDENT (Pro)</span>
+                                    <i class="fa-solid fa-triangle-exclamation"></i><strong>Incident</strong>
+                                    <span class="node-status">Idle</span>
+                                    <div class="tools-anchor-col">
+                                        <div class="tool-anchor" id="tool-query_datadog_metrics"><i class="fa-solid fa-chart-line"></i> Datadog</div>
+                                        <div class="tool-anchor" id="tool-create_pagerduty_incident"><i class="fa-solid fa-bell"></i> PagerDuty</div>
+                                        <div class="tool-anchor" id="tool-restart_service_ansible"><i class="fa-solid fa-power-off"></i> Ansible</div>
+                                    </div>
+                                </div>
+                                <div class="flow-node agent-node" id="node-access_agent">
+                                    <span class="node-badge access">ACCESS (Pro)</span>
+                                    <i class="fa-solid fa-lock-open"></i><strong>Access</strong>
+                                    <span class="node-status">Idle</span>
+                                    <div class="tools-anchor-col">
+                                        <div class="tool-anchor" id="tool-create_servicenow_approval"><i class="fa-solid fa-clipboard-check"></i> ServiceNow</div>
+                                        <div class="tool-anchor" id="tool-assign_iam_role"><i class="fa-solid fa-user-shield"></i> IAM Role</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card alerts-panel alerts-fullwidth">
+            <div class="card-header alert-panel-header">
+                <h2><i class="fa-solid fa-bell"></i> Active Platform Alerts</h2>
+                <span class="alert-status-badge green" id="alert-status">All SLOs Compliant</span>
+            </div>
+            <div class="alerts-feed" id="alerts-feed">
+                <div class="alert-item empty-state"><i class="fa-solid fa-shield-halved"></i><p>No active incidents. All thresholds within SLA limits.</p></div>
+            </div>
+        </div>
+
+        <section class="metrics-section">
+            <div class="section-title">
+                <div class="tcs-title-header">
+                    <h2>Gemini Enterprise Agent Command Center</h2>
+                </div>
+                <p class="section-subtitle">Build · Scale · Govern · Optimize — Full-Lifecycle Agent Governance</p>
+            </div>
+            <div class="metrics-tabs" id="metrics-tabs"></div>
+            <div id="metrics-tab-contents"></div>
+        </section>
+
+        <footer class="app-footer">
+            <p>&copy; 2026 · GEAP Enterprise IT Helpdesk · Cloud Run</p>
+        </footer>
+    </div>
+
+    <script type="module" src="/static/js/main.js?v=4.0.0"></script>
+</body>
+</html>

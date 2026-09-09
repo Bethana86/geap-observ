@@ -13,6 +13,7 @@ from app.agents import AgentEngine, AGENTS, SCENARIOS, ROUTE_MAP
 from app.tools import TOOL_REGISTRY
 from app.telemetry import MetricInstruments
 from app.security import screen_input
+from app.evaluation import AgentEvaluator
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -43,11 +44,11 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
-# ─── Metric Catalog (57 metrics across 4 pillars) ───
+# ─── Metric Catalog (84 metrics across 5 pillars) ───
 CATALOG = {
-    "pillars": {"build": "Build", "scale": "Scale", "govern": "Govern", "optimize": "Optimize"},
-    "pillar_icons": {"build": "fa-cubes-stacked", "scale": "fa-arrows-up-down-left-right", "govern": "fa-shield-halved", "optimize": "fa-gauge-high"},
-    "pillar_subtitles": {"build": "Compose agents, tools, A2A & MCP", "scale": "Run & survive in production under load", "govern": "Secure, control & attribute the fleet", "optimize": "Continuously improve quality & cost"},
+    "pillars": {"build": "Build", "scale": "Scale", "govern": "Govern", "optimize": "Optimize", "evaluate": "Evaluate"},
+    "pillar_icons": {"build": "fa-cubes-stacked", "scale": "fa-arrows-up-down-left-right", "govern": "fa-shield-halved", "optimize": "fa-gauge-high", "evaluate": "fa-clipboard-check"},
+    "pillar_subtitles": {"build": "Compose agents, tools, A2A & MCP", "scale": "Run & survive in production under load", "govern": "Secure, control & attribute the fleet", "optimize": "Continuously improve quality & cost", "evaluate": "Score, benchmark & detect regression"},
     "metrics_by_pillar": {
         "build": [
             {"name": "gen_ai.agent.calls.count", "kind": "counter", "pillar": "build", "domain": "Agents", "unit": "count", "title": "Agent Invocations", "description": "Total agent invocations", "slo": {"op": "lte", "value": 30, "scope": "sum"}},
@@ -112,10 +113,38 @@ CATALOG = {
             {"name": "gen_ai.context.reasoning_drift", "kind": "histogram", "pillar": "optimize", "domain": "Context", "unit": "score", "title": "Reasoning Drift", "description": "Drift of reasoning from the original task", "slo": {"op": "lt", "value": 0.35, "scope": "avg"}},
             {"name": "gen_ai.context.rot.indicator", "kind": "histogram", "pillar": "optimize", "domain": "Context", "unit": "score", "title": "Context Rot", "description": "Attention decay as the window fills", "slo": {"op": "lt", "value": 0.4, "scope": "avg"}},
             {"name": "gen_ai.context.window.utilization", "kind": "histogram", "pillar": "optimize", "domain": "Context", "unit": "%", "title": "Context Window Utilization", "description": "Window fill %; compact at 50-60%", "slo": {"op": "lt", "value": 60, "scope": "avg"}},
-            {"name": "gen_ai.context.compaction.events", "kind": "counter", "pillar": "optimize", "domain": "Context", "unit": "count", "title": "Compaction Events", "description": "Context compactions triggered", "slo": None}
+            {"name": "gen_ai.context.compaction.events", "kind": "counter", "pillar": "optimize", "domain": "Context", "unit": "count", "title": "Compaction Events", "description": "Context compactions triggered", "slo": None},
+            {"name": "gen_ai.tokens.input.per_agent", "kind": "counter", "pillar": "optimize", "domain": "Tokenomics", "unit": "tokens", "title": "Input Tokens / Agent", "description": "Input tokens attributed per agent", "slo": None},
+            {"name": "gen_ai.tokens.output.per_agent", "kind": "counter", "pillar": "optimize", "domain": "Tokenomics", "unit": "tokens", "title": "Output Tokens / Agent", "description": "Output tokens attributed per agent", "slo": None},
+            {"name": "gen_ai.tokens.thinking.per_agent", "kind": "counter", "pillar": "optimize", "domain": "Tokenomics", "unit": "tokens", "title": "Thinking Tokens / Agent", "description": "Thinking tokens per agent", "slo": None},
+            {"name": "gen_ai.tokens.efficiency", "kind": "histogram", "pillar": "optimize", "domain": "Tokenomics", "unit": "tokens", "title": "Tokens / Resolved Task", "description": "Total tokens consumed per resolved task", "slo": {"op": "lt", "value": 5000, "scope": "avg"}},
+            {"name": "gen_ai.tokens.waste_ratio", "kind": "histogram", "pillar": "optimize", "domain": "Tokenomics", "unit": "%", "title": "Token Waste Ratio", "description": "Wasted tokens (retries, failures) / total", "slo": {"op": "lt", "value": 10, "scope": "avg"}},
+            {"name": "gen_ai.cost.per_agent", "kind": "histogram", "pillar": "optimize", "domain": "Cost", "unit": "usd", "title": "Cost per Agent", "description": "Cost attributed to each agent", "slo": None},
+            {"name": "gen_ai.cost.per_model_tier", "kind": "histogram", "pillar": "optimize", "domain": "Cost", "unit": "usd", "title": "Cost per Model Tier", "description": "Cost by model tier (Flash-Lite/Flash/Pro)", "slo": None},
+            {"name": "gen_ai.cost.cumulative", "kind": "counter", "pillar": "optimize", "domain": "Cost", "unit": "usd", "title": "Cumulative Cost", "description": "Running total cost", "slo": None},
+            {"name": "gen_ai.cost.savings.cache", "kind": "counter", "pillar": "optimize", "domain": "Cost", "unit": "usd", "title": "Cache Savings", "description": "Money saved by prefix caching", "slo": None},
+            {"name": "gen_ai.cost.budget.remaining", "kind": "histogram", "pillar": "optimize", "domain": "Budget", "unit": "usd", "title": "Budget Remaining", "description": "Daily budget remaining", "slo": {"op": "gt", "value": 0, "scope": "last"}},
+            {"name": "gen_ai.cost.budget.utilization", "kind": "histogram", "pillar": "optimize", "domain": "Budget", "unit": "%", "title": "Budget Utilization", "description": "Percentage of daily budget consumed", "slo": {"op": "lt", "value": 90, "scope": "last"}}
+        ],
+        "evaluate": [
+            {"name": "gen_ai.eval.task_accuracy", "kind": "histogram", "pillar": "evaluate", "domain": "Accuracy", "unit": "%", "title": "Task Accuracy", "description": "Correct task completion rate", "slo": {"op": "gte", "value": 90, "scope": "avg"}},
+            {"name": "gen_ai.eval.routing_accuracy", "kind": "histogram", "pillar": "evaluate", "domain": "Accuracy", "unit": "%", "title": "Routing Accuracy", "description": "Triage classification accuracy", "slo": {"op": "gte", "value": 95, "scope": "avg"}},
+            {"name": "gen_ai.eval.tool_selection_accuracy", "kind": "histogram", "pillar": "evaluate", "domain": "Accuracy", "unit": "%", "title": "Tool Selection Accuracy", "description": "Correct tool chosen for the task", "slo": {"op": "gte", "value": 90, "scope": "avg"}},
+            {"name": "gen_ai.eval.response_relevance", "kind": "histogram", "pillar": "evaluate", "domain": "Quality", "unit": "score", "title": "Response Relevance", "description": "How relevant the response is (1-5)", "slo": {"op": "gte", "value": 4.0, "scope": "avg"}},
+            {"name": "gen_ai.eval.response_completeness", "kind": "histogram", "pillar": "evaluate", "domain": "Quality", "unit": "score", "title": "Response Completeness", "description": "How complete the response is (1-5)", "slo": {"op": "gte", "value": 3.5, "scope": "avg"}},
+            {"name": "gen_ai.eval.hallucination_rate", "kind": "histogram", "pillar": "evaluate", "domain": "Quality", "unit": "%", "title": "Hallucination Rate", "description": "Responses with fabricated information", "slo": {"op": "lt", "value": 5.0, "scope": "avg"}},
+            {"name": "gen_ai.eval.safety_score", "kind": "histogram", "pillar": "evaluate", "domain": "Quality", "unit": "score", "title": "Safety Score", "description": "Safety and appropriateness (1-5)", "slo": {"op": "gte", "value": 4.5, "scope": "avg"}},
+            {"name": "gen_ai.eval.latency_slo_compliance", "kind": "histogram", "pillar": "evaluate", "domain": "SLO", "unit": "%", "title": "Latency SLO Compliance", "description": "Responses within latency SLO", "slo": {"op": "gte", "value": 95, "scope": "avg"}},
+            {"name": "gen_ai.eval.per_agent_score", "kind": "histogram", "pillar": "evaluate", "domain": "Per-Agent", "unit": "score", "title": "Per-Agent Quality Score", "description": "Quality score per agent (attributed)", "slo": {"op": "gte", "value": 4.0, "scope": "avg"}},
+            {"name": "gen_ai.eval.regression_detected", "kind": "counter", "pillar": "evaluate", "domain": "Regression", "unit": "count", "title": "Regressions Detected", "description": "Quality regression alerts", "slo": {"op": "eq", "value": 0, "scope": "sum"}},
+            {"name": "gen_ai.eval.benchmark.pass_rate", "kind": "histogram", "pillar": "evaluate", "domain": "Benchmark", "unit": "%", "title": "Benchmark Pass Rate", "description": "Golden-dataset test pass rate", "slo": {"op": "gte", "value": 90, "scope": "avg"}},
+            {"name": "gen_ai.eval.benchmark.score_delta", "kind": "histogram", "pillar": "evaluate", "domain": "Benchmark", "unit": "score", "title": "Score Delta vs Baseline", "description": "Score change vs. baseline", "slo": {"op": "gte", "value": -0.3, "scope": "avg"}},
+            {"name": "gen_ai.eval.human_escalation_rate", "kind": "histogram", "pillar": "evaluate", "domain": "Outcomes", "unit": "%", "title": "Human Escalation Rate", "description": "Cases needing human handoff", "slo": {"op": "lt", "value": 15, "scope": "avg"}},
+            {"name": "gen_ai.eval.first_contact_resolution", "kind": "histogram", "pillar": "evaluate", "domain": "Outcomes", "unit": "%", "title": "First Contact Resolution", "description": "Resolved without follow-up", "slo": {"op": "gte", "value": 85, "scope": "avg"}},
+            {"name": "gen_ai.eval.user_satisfaction", "kind": "histogram", "pillar": "evaluate", "domain": "Outcomes", "unit": "score", "title": "User Satisfaction (CSAT)", "description": "Simulated CSAT score (1-5)", "slo": {"op": "gte", "value": 4.0, "scope": "avg"}}
         ]
     },
-    "total": 57,
+    "total": 84,
     "agents": {a: d["model_label"] for a, d in AGENTS.items()}
 }
 
@@ -190,6 +219,7 @@ class ObservabilityState:
 state = ObservabilityState()
 engine = AgentEngine()
 otel = MetricInstruments(state)
+evaluator = AgentEvaluator(state)
 
 # ─── Simulation Flow ───
 async def run_helpdesk_flow(scenario_key: str, custom_query: str = None):
@@ -222,6 +252,11 @@ async def run_helpdesk_flow(scenario_key: str, custom_query: str = None):
     cost, _ = otel.record_agent_call("triage_agent", triage_ms, classification["input_tokens"], classification["output_tokens"], "flash")
     total_cost += cost
 
+    # Record tokenomics for triage
+    t_cached = random.randint(100, min(300, classification["input_tokens"]))
+    t_thinking = random.randint(50, 200)
+    otel.record_tokenomics("triage_agent", "flash", classification["input_tokens"], classification["output_tokens"], t_cached, t_thinking)
+
     category = classification["category"]
     target_agent = ROUTE_MAP.get(category, "identity_agent")
 
@@ -248,12 +283,20 @@ async def run_helpdesk_flow(scenario_key: str, custom_query: str = None):
     specialist_ms = (time.perf_counter() - specialist_start) * 1000
     cost, _ = otel.record_agent_call(target_agent, specialist_ms, specialist_result["input_tokens"], specialist_result["output_tokens"], specialist_result["model"])
     total_cost += cost
+
+    # Record tokenomics for specialist
+    s_cached = random.randint(150, min(400, specialist_result["input_tokens"]))
+    s_thinking = random.randint(100, 500)
+    otel.record_tokenomics(target_agent, specialist_result["model"], specialist_result["input_tokens"], specialist_result["output_tokens"], s_cached, s_thinking)
+
     await asyncio.sleep(0.2)
 
     # 5. Tool calls
+    executed_tools = []
     for i, tool_name in enumerate(tools_sequence):
         if tool_name not in TOOL_REGISTRY:
             continue
+        executed_tools.append(tool_name)
         tool_fn = TOOL_REGISTRY[tool_name]
         args = tool_args_sequence[i] if i < len(tool_args_sequence) else {}
 
@@ -276,7 +319,29 @@ async def run_helpdesk_flow(scenario_key: str, custom_query: str = None):
     workflow_ms = (time.perf_counter() - workflow_start) * 1000
     otel.record_workflow_complete(workflow_ms, total_cost, success=True)
 
-    await manager.broadcast({"type": "complete", "session_id": session_id, "duration_ms": round(workflow_ms, 1), "cost": round(total_cost, 6)})
+    # Token efficiency & evaluation evaluation
+    all_tokens = (classification["input_tokens"] + classification["output_tokens"] +
+                  specialist_result["input_tokens"] + specialist_result["output_tokens"])
+    otel.record_token_efficiency(all_tokens, success=True)
+
+    eval_scores = evaluator.evaluate_response(
+        agent_name=target_agent,
+        query=query,
+        response=specialist_result.get("response", ""),
+        expected_category=scenario["triage_category"] if scenario else None,
+        actual_category=category,
+        tools_used=executed_tools,
+        expected_tools=scenario["tools_sequence"] if scenario else None,
+        duration_ms=workflow_ms
+    )
+
+    await manager.broadcast({
+        "type": "complete",
+        "session_id": session_id,
+        "duration_ms": round(workflow_ms, 1),
+        "cost": round(total_cost, 6),
+        "evaluation": eval_scores
+    })
 
 # ─── Routes ───
 @app.get("/", response_class=HTMLResponse)
@@ -301,10 +366,53 @@ async def get_catalog():
 async def get_observability():
     return state.get_observability()
 
+@app.get("/api/tokenomics")
+async def get_tokenomics():
+    import os
+    budget = float(os.environ.get("GEAP_DAILY_BUDGET", "10.0"))
+    total_prompt = state.total_input_tokens + state.total_cached_tokens
+    
+    # Calculate per-agent token/cost breakdown from metrics
+    agent_stats = {}
+    for agent_name in AGENTS:
+        calls = [p["value"] for p in state.metrics.get("gen_ai.agent.calls.count", []) if p.get("attributes", {}).get("gen_ai.agent.name") == agent_name]
+        costs = [p["value"] for p in state.metrics.get("gen_ai.cost.per_agent", []) if p.get("attributes", {}).get("gen_ai.agent.name") == agent_name]
+        in_tokens = [p["value"] for p in state.metrics.get("gen_ai.tokens.input.per_agent", []) if p.get("attributes", {}).get("gen_ai.agent.name") == agent_name]
+        out_tokens = [p["value"] for p in state.metrics.get("gen_ai.tokens.output.per_agent", []) if p.get("attributes", {}).get("gen_ai.agent.name") == agent_name]
+        agent_stats[agent_name] = {
+            "calls": int(sum(calls)),
+            "cost": round(sum(costs), 5),
+            "input_tokens": int(sum(in_tokens)),
+            "output_tokens": int(sum(out_tokens))
+        }
+
+    return {
+        "total_input_tokens": state.total_input_tokens,
+        "total_output_tokens": state.total_output_tokens,
+        "total_cached_tokens": state.total_cached_tokens,
+        "total_cost": round(state.total_cost, 4),
+        "budget": budget,
+        "budget_remaining": round(max(0.0, budget - state.total_cost), 4),
+        "budget_utilization_pct": round(min(100.0, state.total_cost / budget * 100), 1),
+        "cost_per_task": round(state.total_cost / max(1, state.successful_runs), 4),
+        "cache_savings_pct": round(state.total_cached_tokens / max(1, total_prompt) * 100, 1),
+        "per_agent": agent_stats
+    }
+
+@app.get("/api/evaluation")
+async def get_evaluation():
+    return evaluator.get_summary()
+
+@app.post("/api/evaluation/benchmark")
+async def run_benchmark():
+    results = await evaluator.run_benchmark(engine)
+    return results
+
 @app.post("/api/reset")
 async def reset_metrics():
     state.reset()
-    return {"status": "ok", "message": "All metric accumulators reset."}
+    evaluator.reset()
+    return {"status": "ok", "message": "All metric accumulators and evaluations reset."}
 
 @app.post("/api/simulate")
 async def simulate_flow(scenario: str = "password_reset"):

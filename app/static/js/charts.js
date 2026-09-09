@@ -1,7 +1,7 @@
 // Chart factory — created once, updated in place. Color normalized.
 const charts={};
-const PALETTE=['#06b6d4','#10b981','#a855f7','#f97316','#3b82f6','#ea4335'];
-const PILLAR_COLOR={build:'#4285f4',scale:'#f97316',govern:'#ea4335',optimize:'#34a853'};
+const PALETTE=['#06b6d4','#10b981','#a855f7','#f97316','#3b82f6','#ea4335','#6366f1'];
+const PILLAR_COLOR={build:'#4285f4',scale:'#f97316',govern:'#ea4335',optimize:'#34a853',evaluate:'#6366f1'};
 function themeColors(){ const l=document.body.classList.contains('light-theme');
   return { grid:l?'rgba(0,0,0,0.06)':'rgba(255,255,255,0.05)', tick:l?'#4b5563':'#9ca3af', border:l?'#fff':'rgba(255,255,255,0.05)' }; }
 function baseOptions(){ const c=themeColors();

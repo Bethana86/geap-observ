@@ -1,6 +1,6 @@
 # GEAP Enterprise IT Helpdesk — Observability Platform
 
-> Full-lifecycle **Build · Scale · Govern · Optimize** observability for agentic AI workflows, powered by Gemini on Vertex AI.
+> Full-lifecycle **Build · Scale · Govern · Optimize · Evaluate** observability for agentic AI workflows, powered by Gemini on Vertex AI.
 
 ![Python](https://img.shields.io/badge/Python-3.11+-blue?logo=python)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688?logo=fastapi)
@@ -11,7 +11,7 @@
 
 ## 🧠 What Is This?
 
-A real-time observability dashboard for monitoring **multi-agent AI systems** in production. It tracks **57 OpenTelemetry-aligned metrics** across 4 governance pillars, with live DAG visualization of agent handoffs, tool calls, and model-tier routing.
+A real-time observability dashboard for monitoring **multi-agent AI systems** in production. It tracks **84 OpenTelemetry-aligned metrics** across 5 governance pillars, with live DAG visualization of agent handoffs, tool calls, model-tier routing, granular tokenomics attribution, and LLM-as-judge automated evaluation with golden benchmark testing.
 
 Built as an **Enterprise IT Helpdesk** — 5 specialized agents resolve employee tickets (password resets, software installs, incident response, access requests) while the platform monitors every aspect of the workflow.
 
@@ -68,21 +68,24 @@ MFA Token SCCM   PagerDuty IAM Role
 | `create_servicenow_approval` | ServiceNow |
 | `assign_iam_role` | IAM / RBAC |
 
-### 57 OTel Metrics Across 4 Pillars
+### 84 OTel Metrics Across 5 Pillars
 
 | Pillar | Metrics | What It Tracks |
 |--------|---------|----------------|
 | **Build** | 9 | Agent calls, handoffs, A2A messages, tool execution, MCP skills |
 | **Scale** | 16 | Workflow duration, circuit breakers, retry storms, exit reasons, system resources |
 | **Govern** | 12 | Prompt injection, jailbreak, PII/DLP, Cloud Armor, SPIFFE identity |
-| **Optimize** | 20 | Latency (TTFT/TTFA/TTLT), tokens, cost, routing tiers, quality scores, context health |
+| **Optimize** | 32 | Latency, tokens, tokenomics (per-agent/model cost), cache savings, budget utilization |
+| **Evaluate** | 15 | Task accuracy, routing accuracy, tool selection, hallucination, CSAT, benchmark pass rate |
 
 ### Real-Time Dashboard
 - **Live DAG visualization** — Watch agent handoffs and tool calls animate in real-time
+- **Tokenomics Strip** — Track input/cached/output tokens, spend, cache savings ratio, daily budget progress
+- **Agent Evaluation Scorecard** — Task accuracy, routing accuracy, tool selection, hallucination rate, and 12-test golden benchmark runner
 - **WebSocket streaming** — Sub-second event propagation
 - **Executive KPI strip** — Success rate, latency, cost, cache hit ratio, quality score, risk score
-- **Pillar compliance strip** — At-a-glance status across Build/Scale/Govern/Optimize
-- **Alert panel** — SLO breaches and security incidents
+- **Pillar compliance strip** — At-a-glance status across Build/Scale/Govern/Optimize/Evaluate
+- **Alert panel** — SLO breaches, security incidents, and quality regression alerts
 - **Dark/Light theme** — Toggle with one click
 
 ---
@@ -179,12 +182,15 @@ You can also type **any custom IT query** in the prompt box — the Triage Agent
 |--------|----------|-------------|
 | `GET` | `/` | Dashboard UI |
 | `GET` | `/api/config` | Platform configuration & engine status |
-| `GET` | `/api/catalog` | Full metric catalog (57 metrics, 4 pillars) |
+| `GET` | `/api/catalog` | Full metric catalog (84 metrics, 5 pillars) |
 | `GET` | `/api/observability` | Live metrics, signals, alerts, SLOs |
+| `GET` | `/api/tokenomics` | Token breakdown, per-agent cost attribution, budget utilization |
+| `GET` | `/api/evaluation` | Evaluation summary — task accuracy, hallucination, CSAT |
+| `POST` | `/api/evaluation/benchmark` | Execute 12-test golden dataset routing benchmark |
 | `POST` | `/api/simulate?scenario=` | Execute a preset scenario |
 | `POST` | `/api/chat?query=` | Run a custom natural language query |
 | `POST` | `/api/inject-threat?kind=` | Inject a security threat for demo |
-| `POST` | `/api/reset` | Reset all metric accumulators |
+| `POST` | `/api/reset` | Reset all metric accumulators & evaluation history |
 | `WS` | `/api/ws` | WebSocket for real-time events |
 | `GET` | `/api/stream` | SSE fallback stream |
 

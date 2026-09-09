@@ -7,4 +7,7 @@ export const api = {
   chat: (q) => fetch(`/api/chat?query=${encodeURIComponent(q)}`, { method:'POST' }).then(json),
   injectThreat: (k) => fetch(`/api/inject-threat?kind=${encodeURIComponent(k)}`, { method:'POST' }).then(json),
   reset: () => fetch('/api/reset', { method:'POST' }).then(json),
+  tokenomics: () => fetch('/api/tokenomics').then(json),
+  evaluation: () => fetch('/api/evaluation').then(json),
+  benchmark: () => fetch('/api/evaluation/benchmark', { method:'POST' }).then(json),
 };

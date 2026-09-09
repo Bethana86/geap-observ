@@ -107,7 +107,7 @@ function aggPoint(p, kind) {
 function extract(metric, points) {
   const { domain, kind, pillar } = metric;
   // Filter to only attributed points for agent/tool breakdowns
-  if (pillar === 'optimize' || pillar === 'build') {
+  if (pillar === 'optimize' || pillar === 'build' || pillar === 'evaluate') {
     const agentPoints = points.filter((p) => p.attributes && p.attributes['gen_ai.agent.name']);
     if (agentPoints.length > 0) {
       const data = AGENTS.map((a) => {

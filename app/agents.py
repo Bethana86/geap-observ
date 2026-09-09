@@ -157,14 +157,14 @@ class AgentEngine:
         # Simulation fallback
         await asyncio.sleep(random.uniform(0.2, 0.5))
         q = query.lower()
-        if any(w in q for w in ["password", "locked", "login", "forgot", "reset", "vpn"]):
-            cat = "password_reset"
-        elif any(w in q for w in ["install", "software", "license", "tableau", "application", "app"]):
-            cat = "software_install"
-        elif any(w in q for w in ["down", "outage", "error", "500", "crash", "slow", "production", "incident"]):
-            cat = "system_outage"
-        elif any(w in q for w in ["access", "permission", "sharepoint", "role", "grant", "database"]):
+        if any(w in q for w in ["access", "permission", "sharepoint", "role", "grant", "database", "dba", "s3"]):
             cat = "access_request"
+        elif any(w in q for w in ["password", "locked", "login", "forgot", "reset", "vpn", "mfa"]):
+            cat = "password_reset"
+        elif any(w in q for w in ["install", "software", "license", "tableau", "application", "app", "creative suite", "visual studio"]):
+            cat = "software_install"
+        elif any(w in q for w in ["down", "outage", "error", "500", "crash", "slow", "production", "incident", "kubernetes", "wifi", "disconnect"]):
+            cat = "system_outage"
         else:
             cat = "password_reset"
         return {

@@ -145,3 +145,66 @@ class MetricInstruments:
         }
         if threat_kind in threat_map:
             s.add_metric(threat_map[threat_kind], 1)
+
+    # ─── Tokenomics ───
+    PRICING = {
+        "pro":        {"input": 1.25,  "output": 10.0,  "cached": 0.3125},
+        "flash":      {"input": 0.15,  "output": 0.60,  "cached": 0.0375},
+        "flash_lite": {"input": 0.075, "output": 0.30,  "cached": 0.02},
+    }
+
+    def record_tokenomics(self, agent_name: str, model: str,
+                          input_tokens: int, output_tokens: int,
+                          cached_tokens: int, thinking_tokens: int):
+        """Record granular token usage and cost attribution per agent/model."""
+        s = self.state
+        tier = "pro" if "pro" in model else ("flash_lite" if "lite" in model else "flash")
+        p = self.PRICING[tier]
+
+        # Per-agent token breakdown (attributed)
+        s.add_metric("gen_ai.tokens.input.per_agent", input_tokens,
+                     {"gen_ai.agent.name": agent_name})
+        s.add_metric("gen_ai.tokens.output.per_agent", output_tokens,
+                     {"gen_ai.agent.name": agent_name})
+        s.add_metric("gen_ai.tokens.thinking.per_agent", thinking_tokens,
+                     {"gen_ai.agent.name": agent_name})
+
+        # Cost calculation
+        uncached = max(0, input_tokens - cached_tokens)
+        cost = (uncached * p["input"]
+                + cached_tokens * p["cached"]
+                + output_tokens * p["output"]
+                + thinking_tokens * p["output"]) / 1_000_000
+        savings = (cached_tokens * (p["input"] - p["cached"])) / 1_000_000
+
+        # Per-agent cost (attributed)
+        s.add_metric("gen_ai.cost.per_agent", round(cost, 6),
+                     {"gen_ai.agent.name": agent_name})
+        # Per-tier cost (attributed)
+        s.add_metric("gen_ai.cost.per_model_tier", round(cost, 6),
+                     {"gen_ai.model.tier": tier})
+        # Cumulative
+        s.add_metric("gen_ai.cost.cumulative", round(s.total_cost + cost, 6))
+        # Cache savings
+        s.add_metric("gen_ai.cost.savings.cache", round(savings, 6))
+
+        # Budget tracking
+        import os
+        budget = float(os.environ.get("GEAP_DAILY_BUDGET", "10.0"))
+        remaining = max(0, budget - s.total_cost - cost)
+        s.add_metric("gen_ai.cost.budget.remaining", round(remaining, 4))
+        s.add_metric("gen_ai.cost.budget.utilization",
+                     round((s.total_cost + cost) / budget * 100, 1))
+
+        return cost, savings
+
+    def record_token_efficiency(self, total_tokens: int, success: bool):
+        """Track token efficiency and waste ratio per task."""
+        s = self.state
+        s.add_metric("gen_ai.tokens.efficiency", total_tokens)
+        total_all = s.total_input_tokens + s.total_output_tokens
+        if not success and total_all > 0:
+            s.add_metric("gen_ai.tokens.waste_ratio",
+                         round(total_tokens / total_all * 100, 1))
+        else:
+            s.add_metric("gen_ai.tokens.waste_ratio", 0)

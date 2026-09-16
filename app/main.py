@@ -17,7 +17,7 @@ from app.evaluation import AgentEvaluator
 
 BASE_DIR = Path(__file__).resolve().parent
 
-app = FastAPI(title="GEAP Enterprise IT Helpdesk", version="4.0.0")
+app = FastAPI(title="GEAP Agent Management & Governance - Enterprise IT Helpdesk", version="4.0.0")
 
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 

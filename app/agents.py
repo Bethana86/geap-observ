@@ -120,9 +120,8 @@ class AgentEngine:
 
     def __init__(self):
         self.client = None
-        self.is_live = False
-        self.project_id = os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("GCP_PROJECT_ID", "")
-        self.location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
+        self.project_id = (os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("GCP_PROJECT_ID", "")).split()[0] if (os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("GCP_PROJECT_ID", "")) else ""
+        self.location = (os.environ.get("GOOGLE_CLOUD_LOCATION") or "us-central1").split()[0]
 
         if HAS_GENAI and self.project_id:
             try:

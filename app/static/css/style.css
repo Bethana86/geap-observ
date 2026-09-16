@@ -29,7 +29,7 @@ body { background-color:var(--bg-main);
     background:var(--bg-card); border:1px solid var(--border-color); border-radius:16px; backdrop-filter:blur(12px); box-shadow:0 8px 32px rgba(0,0,0,0.25); flex-wrap:wrap; gap:1rem; }
 .header-left { display:flex; align-items:center; gap:1.2rem; }
 .header-logo-badge { background:transparent; border:none; box-shadow:none; padding:0; display:flex; align-items:center; justify-content:center; }
-.header-titles h1 { font-size:2.2rem; font-weight:800; letter-spacing:-0.02em; }
+.header-titles h1 { font-size:1.85rem; font-weight:800; letter-spacing:-0.02em; }
 .header-titles p { font-size:0.9rem; color:var(--text-secondary); margin-top:0.2rem; }
 .header-right { display:flex; align-items:center; gap:1rem; flex-wrap:wrap; }
 .status-indicator { display:flex; align-items:center; gap:0.6rem; background:var(--bg-status-indicator); padding:0.5rem 0.9rem; border-radius:30px; border:1px solid var(--border-color); }

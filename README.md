@@ -1,4 +1,4 @@
-# GEAP Enterprise IT Helpdesk — Observability Platform
+# GEAP Agent Management & Governance — Enterprise IT Helpdesk
 
 > Full-lifecycle **Build · Scale · Govern · Optimize · Evaluate** observability for agentic AI workflows, powered by Gemini on Vertex AI.
 

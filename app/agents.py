@@ -120,6 +120,7 @@ class AgentEngine:
 
     def __init__(self):
         self.client = None
+        self.is_live = False
         self.project_id = (os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("GCP_PROJECT_ID", "")).split()[0] if (os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("GCP_PROJECT_ID", "")) else ""
         self.location = (os.environ.get("GOOGLE_CLOUD_LOCATION") or "us-central1").split()[0]
 
@@ -131,19 +132,50 @@ class AgentEngine:
                     location=self.location,
                 )
                 self.is_live = True
-            except Exception:
+                print(f"[AgentEngine] LIVE Gemini connected: project={self.project_id}, location={self.location}")
+            except Exception as e:
+                print(f"[AgentEngine] Failed to init Gemini client: {e}")
                 self.is_live = False
+        else:
+            print(f"[AgentEngine] Running in SIMULATION mode (HAS_GENAI={HAS_GENAI}, project_id='{self.project_id}')")
+
+    def _call_gemini_sync(self, model: str, prompt: str) -> object:
+        """Synchronous Gemini call — to be run in a thread executor."""
+        return self.client.models.generate_content(
+            model=model,
+            contents=prompt,
+        )
+
+    async def _call_gemini(self, model: str, prompt: str, timeout: float = 30.0) -> object:
+        """Run the blocking Gemini API call in a thread pool so it doesn't block the event loop."""
+        loop = asyncio.get_event_loop()
+        return await asyncio.wait_for(
+            loop.run_in_executor(None, self._call_gemini_sync, model, prompt),
+            timeout=timeout
+        )
+
+    def _extract_json(self, text: str) -> dict:
+        """Robustly extract JSON from Gemini response that may contain markdown fences."""
+        cleaned = text.strip()
+        # Strip markdown code fences: ```json ... ``` or ``` ... ```
+        if cleaned.startswith("```"):
+            lines = cleaned.split("\n")
+            # Remove first line (```json or ```) and last line (```)
+            lines = [l for l in lines if not l.strip().startswith("```")]
+            cleaned = "\n".join(lines).strip()
+        return json.loads(cleaned)
 
     async def classify(self, query: str) -> dict:
         """Use triage agent to classify intent."""
         if self.is_live:
             try:
                 agent_def = AGENTS["triage_agent"]
-                response = self.client.models.generate_content(
+                response = await self._call_gemini(
                     model=agent_def["model"],
-                    contents=f"{agent_def['instruction']}\n\nUser query: {query}"
+                    prompt=f"{agent_def['instruction']}\n\nUser query: {query}",
+                    timeout=20.0
                 )
-                result = json.loads(response.text.strip().strip('`').replace('json\n', ''))
+                result = self._extract_json(response.text)
                 return {
                     "category": result.get("category", "password_reset"),
                     "summary": result.get("summary", query[:100]),
@@ -151,8 +183,12 @@ class AgentEngine:
                     "input_tokens": getattr(response.usage_metadata, 'prompt_token_count', 500),
                     "output_tokens": getattr(response.usage_metadata, 'candidates_token_count', 100),
                 }
-            except Exception:
-                pass
+            except asyncio.TimeoutError:
+                print(f"[AgentEngine] classify() TIMEOUT after 20s — falling back to simulation")
+            except json.JSONDecodeError as e:
+                print(f"[AgentEngine] classify() JSON parse error: {e} — response was: {response.text[:200] if 'response' in dir() else 'N/A'}")
+            except Exception as e:
+                print(f"[AgentEngine] classify() error: {type(e).__name__}: {e}")
         # Simulation fallback
         await asyncio.sleep(random.uniform(0.2, 0.5))
         q = query.lower()
@@ -179,9 +215,10 @@ class AgentEngine:
         agent_def = AGENTS.get(agent_name, AGENTS["identity_agent"])
         if self.is_live:
             try:
-                response = self.client.models.generate_content(
+                response = await self._call_gemini(
                     model=agent_def["model"],
-                    contents=f"{agent_def['instruction']}\n\nUser request: {query}\n\nProvide a helpful response."
+                    prompt=f"{agent_def['instruction']}\n\nUser request: {query}\n\nProvide a helpful response.",
+                    timeout=30.0
                 )
                 return {
                     "response": response.text,
@@ -189,8 +226,10 @@ class AgentEngine:
                     "output_tokens": getattr(response.usage_metadata, 'candidates_token_count', 300),
                     "model": agent_def["model"]
                 }
-            except Exception:
-                pass
+            except asyncio.TimeoutError:
+                print(f"[AgentEngine] run_specialist({agent_name}) TIMEOUT after 30s — falling back to simulation")
+            except Exception as e:
+                print(f"[AgentEngine] run_specialist({agent_name}) error: {type(e).__name__}: {e}")
         # Simulation fallback
         await asyncio.sleep(random.uniform(0.3, 0.7))
         responses = {
@@ -205,3 +244,4 @@ class AgentEngine:
             "output_tokens": random.randint(200, 600),
             "model": agent_def["model"]
         }
+

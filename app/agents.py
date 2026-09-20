@@ -141,11 +141,13 @@ class AgentEngine:
 
     def _call_gemini_sync(self, model: str, prompt: str) -> object:
         """Synchronous Gemini call — to be run in a thread executor."""
-        # Disable Automatic Function Calling (AFC) to prevent SDK from
-        # trying to auto-detect and execute function calls, which causes hangs.
+        # Explicitly disable Automatic Function Calling (AFC) — without this,
+        # the SDK tries to auto-detect and execute function patterns in the
+        # prompt, causing the API call to hang indefinitely.
         config = genai.types.GenerateContentConfig(
             temperature=0.2,
             max_output_tokens=1024,
+            automatic_function_calling=genai.types.AutomaticFunctionCallingConfig(disable=True),
         )
         return self.client.models.generate_content(
             model=model,

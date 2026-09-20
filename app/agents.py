@@ -139,39 +139,45 @@ class AgentEngine:
         else:
             print(f"[AgentEngine] Running in SIMULATION mode (HAS_GENAI={HAS_GENAI}, project_id='{self.project_id}')")
 
-    def _call_gemini_sync(self, model: str, prompt: str) -> object:
-        """Synchronous Gemini call — to be run in a thread executor."""
-        # Explicitly disable Automatic Function Calling (AFC) — without this,
-        # the SDK tries to auto-detect and execute function patterns in the
-        # prompt, causing the API call to hang indefinitely.
+    async def _call_gemini(self, model: str, prompt: str, timeout: float = 30.0) -> object:
+        """Native async Gemini call using client.aio."""
         config = genai.types.GenerateContentConfig(
             temperature=0.2,
             max_output_tokens=1024,
             automatic_function_calling=genai.types.AutomaticFunctionCallingConfig(disable=True),
         )
-        return self.client.models.generate_content(
-            model=model,
-            contents=prompt,
-            config=config,
-        )
-
-    async def _call_gemini(self, model: str, prompt: str, timeout: float = 30.0) -> object:
-        """Run the blocking Gemini API call in a thread pool so it doesn't block the event loop."""
-        loop = asyncio.get_event_loop()
         return await asyncio.wait_for(
-            loop.run_in_executor(None, self._call_gemini_sync, model, prompt),
+            self.client.aio.models.generate_content(
+                model=model,
+                contents=prompt,
+                config=config,
+            ),
             timeout=timeout
         )
 
     def _extract_json(self, text: str) -> dict:
-        """Robustly extract JSON from Gemini response that may contain markdown fences."""
+        """Robustly extract JSON from Gemini response that may contain markdown fences or extra text."""
         cleaned = text.strip()
-        # Strip markdown code fences: ```json ... ``` or ``` ... ```
-        if cleaned.startswith("```"):
-            lines = cleaned.split("\n")
-            # Remove first line (```json or ```) and last line (```)
-            lines = [l for l in lines if not l.strip().startswith("```")]
-            cleaned = "\n".join(lines).strip()
+        # Look for code fences first
+        if "```" in cleaned:
+            parts = cleaned.split("```")
+            for part in parts:
+                p = part.strip()
+                if p.startswith("json"):
+                    p = p[4:].strip()
+                if p.startswith("{") and p.endswith("}"):
+                    try:
+                        return json.loads(p)
+                    except Exception:
+                        pass
+        # Fallback: search for first { and last }
+        first_brace = cleaned.find("{")
+        last_brace = cleaned.rfind("}")
+        if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+            try:
+                return json.loads(cleaned[first_brace:last_brace + 1])
+            except Exception:
+                pass
         return json.loads(cleaned)
 
     async def classify(self, query: str) -> dict:

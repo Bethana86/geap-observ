@@ -24,8 +24,9 @@ class MetricInstruments:
         s.add_metric("gen_ai.latency.ttfa", ttfa)
 
         # Tokens
-        cached = random.randint(100, min(400, input_tokens))
-        thinking = random.randint(100, 800)
+        max_cached = min(400, max(0, input_tokens))
+        cached = random.randint(0, max_cached) if max_cached > 0 else 0
+        thinking = random.randint(50, 400)
         s.add_metric("gen_ai.tokens.input", input_tokens)
         s.add_metric("gen_ai.tokens.cached", cached)
         s.add_metric("gen_ai.tokens.output", output_tokens)

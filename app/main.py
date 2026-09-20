@@ -240,108 +240,125 @@ async def run_helpdesk_flow(scenario_key: str, custom_query: str = None):
     # Security screening
     screening = screen_input(query)
 
-    # 1. Start
-    await manager.broadcast({"type": "start", "session_id": session_id, "scenario": scenario_key})
-    await asyncio.sleep(0.2)
+    try:
+        # 1. Start
+        await manager.broadcast({"type": "start", "session_id": session_id, "scenario": scenario_key})
+        await asyncio.sleep(0.2)
 
-    # 2. Triage Agent classifies intent
-    await manager.broadcast({"type": "agent_call", "author": "triage_agent", "data": {"status": "classifying", "query": query}})
-    triage_start = time.perf_counter()
-    classification = await engine.classify(query)
-    triage_ms = (time.perf_counter() - triage_start) * 1000
-    cost, _ = otel.record_agent_call("triage_agent", triage_ms, classification["input_tokens"], classification["output_tokens"], "flash")
-    total_cost += cost
+        # 2. Triage Agent classifies intent
+        await manager.broadcast({"type": "agent_call", "author": "triage_agent", "data": {"status": "classifying", "query": query}})
+        triage_start = time.perf_counter()
+        classification = await engine.classify(query)
+        triage_ms = (time.perf_counter() - triage_start) * 1000
+        cost, _ = otel.record_agent_call("triage_agent", triage_ms, classification["input_tokens"], classification["output_tokens"], "flash")
+        total_cost += cost
 
-    # Record tokenomics for triage
-    t_cached = random.randint(100, min(300, classification["input_tokens"]))
-    t_thinking = random.randint(50, 200)
-    otel.record_tokenomics("triage_agent", "flash", classification["input_tokens"], classification["output_tokens"], t_cached, t_thinking)
+        # Record tokenomics for triage
+        t_in = classification.get("input_tokens", 500)
+        t_max_c = min(300, max(0, t_in))
+        t_cached = random.randint(0, t_max_c) if t_max_c > 0 else 0
+        t_thinking = random.randint(20, 100)
+        otel.record_tokenomics("triage_agent", "flash", classification["input_tokens"], classification["output_tokens"], t_cached, t_thinking)
 
-    category = classification["category"]
-    target_agent = ROUTE_MAP.get(category, "identity_agent")
+        category = classification["category"]
+        target_agent = ROUTE_MAP.get(category, "identity_agent")
 
-    # Use scenario definition if available, else use classification
-    if scenario:
-        target_agent = scenario["target_agent"]
-        tools_sequence = scenario["tools_sequence"]
-        tool_args_sequence = scenario["tool_args_sequence"]
-    else:
-        tools_sequence = AGENTS[target_agent]["tools"]
-        tool_args_sequence = [{} for _ in tools_sequence]
+        # Use scenario definition if available, else use classification
+        if scenario:
+            target_agent = scenario["target_agent"]
+            tools_sequence = scenario["tools_sequence"]
+            tool_args_sequence = scenario["tool_args_sequence"]
+        else:
+            tools_sequence = AGENTS[target_agent]["tools"]
+            tool_args_sequence = [{} for _ in tools_sequence]
 
-    await asyncio.sleep(0.2)
+        await asyncio.sleep(0.2)
 
-    # 3. Handoff to specialist
-    otel.record_handoff("triage_agent", target_agent)
-    await manager.broadcast({"type": "handoff", "author": target_agent, "from": "triage_agent", "to": target_agent})
-    await asyncio.sleep(0.3)
-
-    # 4. Specialist agent processes
-    await manager.broadcast({"type": "agent_call", "author": target_agent, "data": {"status": "processing"}})
-    specialist_start = time.perf_counter()
-    specialist_result = await engine.run_specialist(target_agent, query)
-    specialist_ms = (time.perf_counter() - specialist_start) * 1000
-    cost, _ = otel.record_agent_call(target_agent, specialist_ms, specialist_result["input_tokens"], specialist_result["output_tokens"], specialist_result["model"])
-    total_cost += cost
-
-    # Record tokenomics for specialist
-    s_cached = random.randint(150, min(400, specialist_result["input_tokens"]))
-    s_thinking = random.randint(100, 500)
-    otel.record_tokenomics(target_agent, specialist_result["model"], specialist_result["input_tokens"], specialist_result["output_tokens"], s_cached, s_thinking)
-
-    await asyncio.sleep(0.2)
-
-    # 5. Tool calls
-    executed_tools = []
-    for i, tool_name in enumerate(tools_sequence):
-        if tool_name not in TOOL_REGISTRY:
-            continue
-        executed_tools.append(tool_name)
-        tool_fn = TOOL_REGISTRY[tool_name]
-        args = tool_args_sequence[i] if i < len(tool_args_sequence) else {}
-
-        await manager.broadcast({"type": "tool_call", "author": target_agent, "data": {"tool_call": {"name": tool_name, "args": args}}})
-
-        tool_start = time.perf_counter()
-        try:
-            result = await tool_fn(**args)
-            tool_ms = (time.perf_counter() - tool_start) * 1000
-            otel.record_tool_call(tool_name, tool_ms, success=True)
-        except Exception:
-            tool_ms = (time.perf_counter() - tool_start) * 1000
-            otel.record_tool_call(tool_name, tool_ms, success=False)
-            result = {"status": "error"}
-
-        await manager.broadcast({"type": "tool_response", "author": target_agent, "data": {"tool_response": {"name": tool_name, "output": result}}})
+        # 3. Handoff to specialist
+        otel.record_handoff("triage_agent", target_agent)
+        await manager.broadcast({"type": "handoff", "author": target_agent, "from": "triage_agent", "to": target_agent})
         await asyncio.sleep(0.3)
 
-    # 6. Complete
-    workflow_ms = (time.perf_counter() - workflow_start) * 1000
-    otel.record_workflow_complete(workflow_ms, total_cost, success=True)
+        # 4. Specialist agent processes
+        await manager.broadcast({"type": "agent_call", "author": target_agent, "data": {"status": "processing"}})
+        specialist_start = time.perf_counter()
+        specialist_result = await engine.run_specialist(target_agent, query)
+        specialist_ms = (time.perf_counter() - specialist_start) * 1000
+        cost, _ = otel.record_agent_call(target_agent, specialist_ms, specialist_result["input_tokens"], specialist_result["output_tokens"], specialist_result["model"])
+        total_cost += cost
 
-    # Token efficiency & evaluation evaluation
-    all_tokens = (classification["input_tokens"] + classification["output_tokens"] +
-                  specialist_result["input_tokens"] + specialist_result["output_tokens"])
-    otel.record_token_efficiency(all_tokens, success=True)
+        # Record tokenomics for specialist
+        s_in = specialist_result.get("input_tokens", 800)
+        s_max_c = min(400, max(0, s_in))
+        s_cached = random.randint(0, s_max_c) if s_max_c > 0 else 0
+        s_thinking = random.randint(50, 250)
+        otel.record_tokenomics(target_agent, specialist_result["model"], specialist_result["input_tokens"], specialist_result["output_tokens"], s_cached, s_thinking)
 
-    eval_scores = evaluator.evaluate_response(
-        agent_name=target_agent,
-        query=query,
-        response=specialist_result.get("response", ""),
-        expected_category=scenario["triage_category"] if scenario else None,
-        actual_category=category,
-        tools_used=executed_tools,
-        expected_tools=scenario["tools_sequence"] if scenario else None,
-        duration_ms=workflow_ms
-    )
+        await asyncio.sleep(0.2)
 
-    await manager.broadcast({
-        "type": "complete",
-        "session_id": session_id,
-        "duration_ms": round(workflow_ms, 1),
-        "cost": round(total_cost, 6),
-        "evaluation": eval_scores
-    })
+        # 5. Tool calls
+        executed_tools = []
+        for i, tool_name in enumerate(tools_sequence):
+            if tool_name not in TOOL_REGISTRY:
+                continue
+            executed_tools.append(tool_name)
+            tool_fn = TOOL_REGISTRY[tool_name]
+            args = tool_args_sequence[i] if i < len(tool_args_sequence) else {}
+
+            await manager.broadcast({"type": "tool_call", "author": target_agent, "data": {"tool_call": {"name": tool_name, "args": args}}})
+
+            tool_start = time.perf_counter()
+            try:
+                result = await tool_fn(**args)
+                tool_ms = (time.perf_counter() - tool_start) * 1000
+                otel.record_tool_call(tool_name, tool_ms, success=True)
+            except Exception:
+                tool_ms = (time.perf_counter() - tool_start) * 1000
+                otel.record_tool_call(tool_name, tool_ms, success=False)
+                result = {"status": "error"}
+
+            await manager.broadcast({"type": "tool_response", "author": target_agent, "data": {"tool_response": {"name": tool_name, "output": result}}})
+            await asyncio.sleep(0.3)
+
+        # 6. Complete
+        workflow_ms = (time.perf_counter() - workflow_start) * 1000
+        otel.record_workflow_complete(workflow_ms, total_cost, success=True)
+
+        # Token efficiency & evaluation evaluation
+        all_tokens = (classification["input_tokens"] + classification["output_tokens"] +
+                      specialist_result["input_tokens"] + specialist_result["output_tokens"])
+        otel.record_token_efficiency(all_tokens, success=True)
+
+        eval_scores = evaluator.evaluate_response(
+            agent_name=target_agent,
+            query=query,
+            response=specialist_result.get("response", ""),
+            expected_category=scenario["triage_category"] if scenario else None,
+            actual_category=category,
+            tools_used=executed_tools,
+            expected_tools=scenario["tools_sequence"] if scenario else None,
+            duration_ms=workflow_ms
+        )
+
+        await manager.broadcast({
+            "type": "complete",
+            "session_id": session_id,
+            "duration_ms": round(workflow_ms, 1),
+            "cost": round(total_cost, 6),
+            "evaluation": eval_scores
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        workflow_ms = (time.perf_counter() - workflow_start) * 1000
+        otel.record_workflow_complete(workflow_ms, total_cost, success=False)
+        await manager.broadcast({
+            "type": "complete",
+            "session_id": session_id,
+            "duration_ms": round(workflow_ms, 1),
+            "cost": round(total_cost, 6),
+            "error": str(e)
+        })
 
 # ─── Routes ───
 @app.get("/", response_class=HTMLResponse)

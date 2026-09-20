@@ -141,9 +141,16 @@ class AgentEngine:
 
     def _call_gemini_sync(self, model: str, prompt: str) -> object:
         """Synchronous Gemini call — to be run in a thread executor."""
+        # Disable Automatic Function Calling (AFC) to prevent SDK from
+        # trying to auto-detect and execute function calls, which causes hangs.
+        config = genai.types.GenerateContentConfig(
+            temperature=0.2,
+            max_output_tokens=1024,
+        )
         return self.client.models.generate_content(
             model=model,
             contents=prompt,
+            config=config,
         )
 
     async def _call_gemini(self, model: str, prompt: str, timeout: float = 30.0) -> object:
@@ -170,11 +177,13 @@ class AgentEngine:
         if self.is_live:
             try:
                 agent_def = AGENTS["triage_agent"]
+                print(f"[AgentEngine] classify() calling Gemini {agent_def['model']}...")
                 response = await self._call_gemini(
                     model=agent_def["model"],
                     prompt=f"{agent_def['instruction']}\n\nUser query: {query}",
-                    timeout=20.0
+                    timeout=45.0
                 )
+                print(f"[AgentEngine] classify() got response: {response.text[:200]}")
                 result = self._extract_json(response.text)
                 return {
                     "category": result.get("category", "password_reset"),
@@ -184,7 +193,7 @@ class AgentEngine:
                     "output_tokens": getattr(response.usage_metadata, 'candidates_token_count', 100),
                 }
             except asyncio.TimeoutError:
-                print(f"[AgentEngine] classify() TIMEOUT after 20s — falling back to simulation")
+                print(f"[AgentEngine] classify() TIMEOUT after 45s — falling back to simulation")
             except json.JSONDecodeError as e:
                 print(f"[AgentEngine] classify() JSON parse error: {e} — response was: {response.text[:200] if 'response' in dir() else 'N/A'}")
             except Exception as e:
@@ -215,11 +224,13 @@ class AgentEngine:
         agent_def = AGENTS.get(agent_name, AGENTS["identity_agent"])
         if self.is_live:
             try:
+                print(f"[AgentEngine] run_specialist({agent_name}) calling Gemini {agent_def['model']}...")
                 response = await self._call_gemini(
                     model=agent_def["model"],
                     prompt=f"{agent_def['instruction']}\n\nUser request: {query}\n\nProvide a helpful response.",
-                    timeout=30.0
+                    timeout=60.0
                 )
+                print(f"[AgentEngine] run_specialist({agent_name}) got response ({len(response.text)} chars)")
                 return {
                     "response": response.text,
                     "input_tokens": getattr(response.usage_metadata, 'prompt_token_count', 800),
@@ -227,7 +238,7 @@ class AgentEngine:
                     "model": agent_def["model"]
                 }
             except asyncio.TimeoutError:
-                print(f"[AgentEngine] run_specialist({agent_name}) TIMEOUT after 30s — falling back to simulation")
+                print(f"[AgentEngine] run_specialist({agent_name}) TIMEOUT after 60s — falling back to simulation")
             except Exception as e:
                 print(f"[AgentEngine] run_specialist({agent_name}) error: {type(e).__name__}: {e}")
         # Simulation fallback
